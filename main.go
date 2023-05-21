@@ -9,9 +9,13 @@ import (
 	"github.com/gofiber/websocket"
 )
 
-type client struct{} // Add more data to this type if needed
+type client struct {
+	Username string
+} // Add more data to this type if needed
 
-var clients = make(map[*websocket.Conn]client) // Note: although large maps with pointer-like types (e.g. strings) as keys are slow, using pointers themselves as keys is acceptable and fast
+var clients = make(map[*websocket.Conn]*client)
+
+// Note: although large maps with pointer-like types (e.g. strings) as keys are slow, using pointers themselves as keys is acceptable and fast
 var register = make(chan *websocket.Conn)
 var broadcast = make(chan string)
 var unregister = make(chan *websocket.Conn)
@@ -20,15 +24,28 @@ func runHub() {
 	for {
 		select {
 		case connection := <-register:
-			clients[connection] = client{}
-			log.Println("connection registered")
+			// Read the username from the client
+			_, usernameBytes, err := connection.ReadMessage()
+			if err != nil {
+				log.Println("read error:", err)
+				return
+			}
+
+			// Create a new client with the username
+			username := string(usernameBytes)
+			newClient := &client{
+				Username: username,
+			}
+			clients[connection] = newClient
+			log.Println("connection registered with username:", username)
 
 		case message := <-broadcast:
 			log.Println("message received:", message)
 
 			// Send the message to all clients
-			for connection := range clients {
-				if err := connection.WriteMessage(websocket.TextMessage, []byte(message)); err != nil {
+			for connection, client := range clients {
+				usernameMessage := "[" + client.Username + "]: " + message
+				if err := connection.WriteMessage(websocket.TextMessage, []byte(usernameMessage)); err != nil {
 					log.Println("write error:", err)
 
 					unregister <- connection

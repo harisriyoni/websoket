@@ -1,5 +1,3 @@
-<!-- See https://github.com/gorilla/websocket/blob/master/examples/chat/home.html -->
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -32,11 +30,12 @@ window.onload = function () {
 
     if (window["WebSocket"]) {
         conn = new WebSocket("wss://" + document.location.host + "/ws");
-        conn.onclose = function (evt) {
-            var item = document.createElement("div");
-            item.innerHTML = "<b>Connection closed.</b>";
-            appendLog(item);
+        conn.onopen = function (evt) {
+            // Prompt for username and send it to the server
+            var username = prompt("Please enter your username:");
+            conn.send(username);
         };
+
         conn.onmessage = function (evt) {
             var messages = evt.data.split('\n');
             for (var i = 0; i < messages.length; i++) {
@@ -87,7 +86,6 @@ body {
     width: 100%;
     overflow: hidden;
 }
-
 </style>
 </head>
 <body>
