@@ -1,111 +1,111 @@
 package main
 
 import (
-	"flag"
-	"log"
-
+	"fmt"
 	"github.com/aiteung/musik"
-	"github.com/gofiber/fiber"
-	"github.com/gofiber/websocket"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/websocket/v2"
+	"log"
 )
 
-type client struct {
+type Message struct {
+	Username string `json:"username"`
+	Content  string `json:"content"`
+}
+
+type Client struct {
 	Username string
-} // Add more data to this type if needed
+	Conn     *websocket.Conn
+}
 
-var clients = make(map[*websocket.Conn]*client)
+type ChatRoom struct {
+	clients    []*Client
+	register   chan *Client
+	unregister chan *Client
+	broadcast  chan Message
+}
 
-// Note: although large maps with pointer-like types (e.g. strings) as keys are slow, using pointers themselves as keys is acceptable and fast
-var register = make(chan *websocket.Conn)
-var broadcast = make(chan string)
-var unregister = make(chan *websocket.Conn)
+func NewChatRoom() *ChatRoom {
+	return &ChatRoom{
+		clients:    make([]*Client, 0),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
+		broadcast:  make(chan Message),
+	}
+}
 
-func runHub() {
+func (cr *ChatRoom) Run() {
 	for {
 		select {
-		case connection := <-register:
-			// Read the username from the client
-			_, usernameBytes, err := connection.ReadMessage()
-			if err != nil {
-				log.Println("read error:", err)
-				return
-			}
-
-			// Create a new client with the username
-			username := string(usernameBytes)
-			newClient := &client{
-				Username: username,
-			}
-			clients[connection] = newClient
-			log.Println("connection registered with username:", username)
-
-		case message := <-broadcast:
-			log.Println("message received:", message)
-
-			// Send the message to all clients
-			for connection, client := range clients {
-				usernameMessage := "[" + client.Username + "]: " + message
-				if err := connection.WriteMessage(websocket.TextMessage, []byte(usernameMessage)); err != nil {
-					log.Println("write error:", err)
-
-					unregister <- connection
-					connection.WriteMessage(websocket.CloseMessage, []byte{})
-					connection.Close()
+		case client := <-cr.register:
+			cr.clients = append(cr.clients, client)
+			go cr.broadcastMessage(Message{
+				Username: "Server",
+				Content:  fmt.Sprintf("User %s joined the chat", client.Username),
+			})
+		case client := <-cr.unregister:
+			for i, c := range cr.clients {
+				if c == client {
+					cr.clients = append(cr.clients[:i], cr.clients[i+1:]...)
+					go cr.broadcastMessage(Message{
+						Username: "Server",
+						Content:  fmt.Sprintf("User %s left the chat", client.Username),
+					})
+					break
 				}
 			}
-
-		case connection := <-unregister:
-			// Remove the client from the hub
-			delete(clients, connection)
-
-			log.Println("connection unregistered")
+		case message := <-cr.broadcast:
+			for _, client := range cr.clients {
+				go func(c *Client) {
+					if err := c.Conn.WriteJSON(message); err != nil {
+						log.Println("Error broadcasting message:", err)
+					}
+				}(client)
+			}
 		}
 	}
 }
 
+func (cr *ChatRoom) broadcastMessage(message Message) {
+	cr.broadcast <- message
+}
+
 func main() {
+	chatRoom := NewChatRoom()
+	go chatRoom.Run()
+
 	app := fiber.New()
 
 	app.Static("/", "./home.html")
 
-	app.Use(func(c *fiber.Ctx) {
-		if websocket.IsWebSocketUpgrade(c) { // Returns true if the client requested upgrade to the WebSocket protocol
-			c.Next()
-		}
-	})
-
-	go runHub()
-
 	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		// When the function returns, unregister the client and close the connection
+		username := c.Query("username")
+		client := &Client{
+			Username: username,
+			Conn:     c,
+		}
+		chatRoom.register <- client
+
 		defer func() {
-			unregister <- c
+			chatRoom.unregister <- client
 			c.Close()
 		}()
 
-		// Register the client
-		register <- c
-
 		for {
-			messageType, message, err := c.ReadMessage()
+			var message Message
+			err := c.ReadJSON(&message)
 			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Println("read error:", err)
-				}
-
-				return // Calls the deferred function, i.e. closes the connection on error
+				log.Println("Error reading message:", err)
+				break
 			}
 
-			if messageType == websocket.TextMessage {
-				// Broadcast the received message
-				broadcast <- string(message)
-			} else {
-				log.Println("websocket message received of type", messageType)
-			}
+			chatRoom.broadcastMessage(message)
 		}
 	}))
 
-	addr := flag.String("addr", musik.Dangdut(), "http service address")
-	flag.Parse()
-	app.Listen(*addr)
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.Render("home.html", nil)
+	})
+
+	log.Fatal(app.Listen(musik.Dangdut()))
 }
