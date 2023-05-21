@@ -30,6 +30,11 @@ window.onload = function () {
 
     if (window["WebSocket"]) {
         conn = new WebSocket("wss://" + document.location.host + "/ws");
+        conn.onclose = function (evt) {
+            var item = document.createElement("div");
+            item.innerHTML = "<b>Connection closed.</b>";
+            appendLog(item);
+        };
         conn.onopen = function (evt) {
             // Prompt for username and send it to the server
             var username = prompt("Please enter your username:");
