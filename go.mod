@@ -3,13 +3,13 @@ module github.com/rofinafiin/ws-repo
 go 1.20
 
 require (
+	github.com/aiteung/musik v0.0.5
 	github.com/gofiber/fiber/v2 v2.46.0
 	github.com/gofiber/websocket/v2 v2.2.0
 )
 
 require (
 	filippo.io/edwards25519 v1.0.0 // indirect
-	github.com/aiteung/musik v0.0.5 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
 	github.com/fasthttp/websocket v1.5.3 // indirect
 	github.com/google/uuid v1.3.0 // indirect
