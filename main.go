@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/aiteung/musik"
+	"log"
+	"os"
+
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
-	"log"
 )
 
 type Message struct {
@@ -104,8 +105,13 @@ func main() {
 	}))
 
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Render("home.html", nil)
+		return c.SendFile("./home.html")
 	})
 
-	log.Fatal(app.Listen(musik.Dangdut()))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
+
+	log.Fatal(app.Listen(":" + port))
 }
